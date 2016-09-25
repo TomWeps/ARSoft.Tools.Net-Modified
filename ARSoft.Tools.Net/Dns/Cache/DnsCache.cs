@@ -86,17 +86,23 @@ namespace ARSoft.Tools.Net.Dns
 		public void Add<TRecord>(DomainName name, RecordType recordType, RecordClass recordClass, IEnumerable<TRecord> records, DnsSecValidationResult validationResult, int timeToLive)
 			where TRecord : DnsRecordBase
 		{
-			DnsCacheRecordList<DnsRecordBase> cacheValues = new DnsCacheRecordList<DnsRecordBase>();
-			cacheValues.AddRange(records);
-			cacheValues.ValidationResult = validationResult;
+		    if (timeToLive > 0)
+		    {
+		        DnsCacheRecordList<DnsRecordBase> cacheValues = new DnsCacheRecordList<DnsRecordBase>();
+		        cacheValues.AddRange(records);
+		        cacheValues.ValidationResult = validationResult;
 
-			Add(name, recordType, recordClass, cacheValues, timeToLive);
+		        Add(name, recordType, recordClass, cacheValues, timeToLive);
+		    }
 		}
 
 		public void Add(DomainName name, RecordType recordType, RecordClass recordClass, DnsCacheRecordList<DnsRecordBase> records, int timeToLive)
 		{
-			CacheKey key = new CacheKey(name, recordType, recordClass);
-			_cache.TryAdd(key, new CacheValue(records, timeToLive));
+		    if (timeToLive > 0)
+		    {
+		        CacheKey key = new CacheKey(name, recordType, recordClass);
+		        _cache.TryAdd(key, new CacheValue(records, timeToLive));
+		    }
 		}
 
 		public bool TryGetRecords<TRecord>(DomainName name, RecordType recordType, RecordClass recordClass, out List<TRecord> records)
