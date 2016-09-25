@@ -24,6 +24,6 @@ namespace ARSoft.Tools.Net.Dns
 	{
 		public bool IsMulticast;
 		public IPAddress LocalAddress;
-		public IPAddress ServerAddress;
+		public IPEndPoint ServerEndPoint;
 	}
 }

@@ -36,6 +36,8 @@ namespace ARSoft.Tools.Net.Dns
 	/// </summary>
 	public class DnsClient : DnsClientBase
 	{
+	    private const int DnsDefaultPort = 53;
+
 		/// <summary>
 		///   Returns a default instance of the DnsClient, which uses the configured dns servers of the executing computer and a
 		///   query timeout of 10 seconds.
@@ -71,7 +73,7 @@ namespace ARSoft.Tools.Net.Dns
 		/// <param name="dnsServer"> The IPAddress of the dns server to use </param>
 		/// <param name="queryTimeout"> Query timeout in milliseconds </param>
 		public DnsClient(IPAddress dnsServer, int queryTimeout)
-			: this(new List<IPAddress> { dnsServer }, queryTimeout) {}
+			: this(new List<IPEndPoint> { new IPEndPoint(dnsServer, DnsDefaultPort) }, queryTimeout) {}
 
 		/// <summary>
 		///   Provides a new instance with custom dns servers and query timeout
@@ -79,13 +81,23 @@ namespace ARSoft.Tools.Net.Dns
 		/// <param name="dnsServers"> The IPAddresses of the dns servers to use </param>
 		/// <param name="queryTimeout"> Query timeout in milliseconds </param>
 		public DnsClient(IEnumerable<IPAddress> dnsServers, int queryTimeout)
-			: base(dnsServers, queryTimeout, 53)
-		{
-			IsUdpEnabled = true;
-			IsTcpEnabled = true;
-		}
+			: this( dnsServers.Select(a=> new IPEndPoint(a, DnsDefaultPort)), queryTimeout) { }
+		
 
-		protected override int MaximumQueryMessageSize => 512;
+        /// <summary>
+        ///   Provides a new instance with custom dns servers and query timeout
+        /// </summary>
+        /// <param name="dnsServers"> The IPAddresses of the dns servers to use </param>
+        /// <param name="queryTimeout"> Query timeout in milliseconds </param>
+        public DnsClient(IEnumerable<IPEndPoint> dnsServers, int queryTimeout)
+            : base(dnsServers, queryTimeout)
+        {
+            IsUdpEnabled = true;
+            IsTcpEnabled = true;
+        }
+
+
+        protected override int MaximumQueryMessageSize => 512;
 
 		/// <summary>
 		///   Queries a dns server for specified records.

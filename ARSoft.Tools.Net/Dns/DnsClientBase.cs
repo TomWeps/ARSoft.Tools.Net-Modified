@@ -35,16 +35,20 @@ namespace ARSoft.Tools.Net.Dns
 	{
 		private static readonly SecureRandom _secureRandom = new SecureRandom(new CryptoApiRandomGenerator());
 
-		private readonly List<IPAddress> _servers;
-		private readonly bool _isAnyServerMulticast;
-		private readonly int _port;
+		private readonly List<IPEndPoint> _servers;
+		private readonly bool _isAnyServerMulticast;		
 
-		internal DnsClientBase(IEnumerable<IPAddress> servers, int queryTimeout, int port)
+	    internal DnsClientBase(IEnumerable<IPAddress> servers, int queryTimeout, int port)
+            :this( servers.Select(s=> new IPEndPoint(s,port)), queryTimeout)
+	    {
+	    }
+
+
+	    internal DnsClientBase(IEnumerable<IPEndPoint> servers, int queryTimeout)
 		{
 			_servers = servers.OrderBy(s => s.AddressFamily == AddressFamily.InterNetworkV6 ? 0 : 1).ToList();
-			_isAnyServerMulticast = _servers.Any(s => s.IsMulticast());
-			QueryTimeout = queryTimeout;
-			_port = port;
+			_isAnyServerMulticast = _servers.Any(s => s.Address.IsMulticast());
+			QueryTimeout = queryTimeout;			
 		}
 
 		/// <summary>
@@ -100,8 +104,10 @@ namespace ARSoft.Tools.Net.Dns
 				{
 					var endpointInfo = endpointInfos[i];
 
-					IPAddress responderAddress;
-					byte[] resultData = sendByTcp ? QueryByTcp(endpointInfo.ServerAddress, messageData, messageLength, ref tcpClient, ref tcpStream, out responderAddress) : QueryByUdp(endpointInfo, messageData, messageLength, out responderAddress);
+					IPEndPoint responderEndPoint;
+					byte[] resultData = sendByTcp ? 
+                        QueryByTcp(endpointInfo.ServerEndPoint, messageData, messageLength, ref tcpClient, ref tcpStream, out responderEndPoint) : 
+                        QueryByUdp(endpointInfo, messageData, messageLength, out responderEndPoint);
 
 					if (resultData != null)
 					{
@@ -127,7 +133,7 @@ namespace ARSoft.Tools.Net.Dns
 
 						if (result.IsTcpResendingRequested)
 						{
-							resultData = QueryByTcp(responderAddress, messageData, messageLength, ref tcpClient, ref tcpStream, out responderAddress);
+							resultData = QueryByTcp(responderEndPoint, messageData, messageLength, ref tcpClient, ref tcpStream, out responderEndPoint);
 							if (resultData != null)
 							{
 								TMessage tcpResult;
@@ -161,7 +167,7 @@ namespace ARSoft.Tools.Net.Dns
 
 						while (isTcpNextMessageWaiting)
 						{
-							resultData = QueryByTcp(responderAddress, null, 0, ref tcpClient, ref tcpStream, out responderAddress);
+							resultData = QueryByTcp(responderEndPoint, null, 0, ref tcpClient, ref tcpStream, out responderEndPoint);
 							if (resultData != null)
 							{
 								TMessage tcpResult;
@@ -287,7 +293,7 @@ namespace ARSoft.Tools.Net.Dns
 			}
 		}
 
-		private byte[] QueryByUdp(DnsClientEndpointInfo endpointInfo, byte[] messageData, int messageLength, out IPAddress responderAddress)
+		private byte[] QueryByUdp(DnsClientEndpointInfo endpointInfo, byte[] messageData, int messageLength, out IPEndPoint responderEndPoint)
 		{
 			using (var udpClient = new Socket(endpointInfo.LocalAddress.AddressFamily, SocketType.Dgram, ProtocolType.Udp))
 			{
@@ -297,17 +303,17 @@ namespace ARSoft.Tools.Net.Dns
 
 					PrepareAndBindUdpSocket(endpointInfo, udpClient);
 
-					EndPoint serverEndpoint = new IPEndPoint(endpointInfo.ServerAddress, _port);
+				    EndPoint serverEndpoint = endpointInfo.ServerEndPoint;
 
 					udpClient.SendTo(messageData, messageLength, SocketFlags.None, serverEndpoint);
 
 					if (endpointInfo.IsMulticast)
-						serverEndpoint = new IPEndPoint(udpClient.AddressFamily == AddressFamily.InterNetwork ? IPAddress.Any : IPAddress.IPv6Any, _port);
+						serverEndpoint = new IPEndPoint(udpClient.AddressFamily == AddressFamily.InterNetwork ? IPAddress.Any : IPAddress.IPv6Any, endpointInfo.ServerEndPoint.Port);
 
 					byte[] buffer = new byte[65535];
 					int length = udpClient.ReceiveFrom(buffer, 0, buffer.Length, SocketFlags.None, ref serverEndpoint);
 
-					responderAddress = ((IPEndPoint) serverEndpoint).Address;
+					responderEndPoint = (IPEndPoint) serverEndpoint;
 
 					byte[] res = new byte[length];
 					Buffer.BlockCopy(buffer, 0, res, 0, length);
@@ -316,7 +322,7 @@ namespace ARSoft.Tools.Net.Dns
 				catch (Exception e)
 				{
 					Trace.TraceError("Error on dns query: " + e);
-					responderAddress = default(IPAddress);
+					responderEndPoint = default(IPEndPoint);
 					return null;
 				}
 			}
@@ -330,30 +336,28 @@ namespace ARSoft.Tools.Net.Dns
 			}
 			else
 			{
-				udpClient.Connect(endpointInfo.ServerAddress, _port);
+			    udpClient.Connect(endpointInfo.ServerEndPoint);                    
 			}
 		}
 
-		private byte[] QueryByTcp(IPAddress nameServer, byte[] messageData, int messageLength, ref TcpClient tcpClient, ref NetworkStream tcpStream, out IPAddress responderAddress)
+		private byte[] QueryByTcp(IPEndPoint nameServerEndPoint, byte[] messageData, int messageLength, ref TcpClient tcpClient, ref NetworkStream tcpStream, out IPEndPoint responderEndPoint)
 		{
-			responderAddress = nameServer;
+			responderEndPoint = nameServerEndPoint;
 
 			if (!IsTcpEnabled)
 				return null;
-
-			IPEndPoint endPoint = new IPEndPoint(nameServer, _port);
-
+			
 			try
 			{
 				if (tcpClient == null)
 				{
-					tcpClient = new TcpClient(nameServer.AddressFamily)
+					tcpClient = new TcpClient(nameServerEndPoint.AddressFamily)
 					{
 						ReceiveTimeout = QueryTimeout,
 						SendTimeout = QueryTimeout
 					};
 
-					if (!tcpClient.TryConnect(endPoint, QueryTimeout))
+					if (!tcpClient.TryConnect(nameServerEndPoint, QueryTimeout))
 						return null;
 
 					tcpStream = tcpClient.GetStream();
@@ -425,7 +429,7 @@ namespace ARSoft.Tools.Net.Dns
 
 				try
 				{
-					resultData = await (sendByTcp ? QueryByTcpAsync(endpointInfo.ServerAddress, messageData, messageLength, null, null, token) : QuerySingleResponseByUdpAsync(endpointInfo, messageData, messageLength, token));
+					resultData = await (sendByTcp ? QueryByTcpAsync(endpointInfo.ServerEndPoint, messageData, messageLength, null, null, token) : QuerySingleResponseByUdpAsync(endpointInfo, messageData, messageLength, token));
 
 					if (resultData == null)
 						return null;
@@ -450,7 +454,7 @@ namespace ARSoft.Tools.Net.Dns
 
 					if (result.IsTcpResendingRequested)
 					{
-						resultData = await QueryByTcpAsync(resultData.ResponderAddress, messageData, messageLength, resultData.TcpClient, resultData.TcpStream, token);
+						resultData = await QueryByTcpAsync(resultData.ResponderEndPoint, messageData, messageLength, resultData.TcpClient, resultData.TcpStream, token);
 						if (resultData != null)
 						{
 							TMessage tcpResult;
@@ -482,7 +486,7 @@ namespace ARSoft.Tools.Net.Dns
 					while (isTcpNextMessageWaiting)
 					{
 						// ReSharper disable once PossibleNullReferenceException
-						resultData = await QueryByTcpAsync(resultData.ResponderAddress, null, 0, resultData.TcpClient, resultData.TcpStream, token);
+						resultData = await QueryByTcpAsync(resultData.ResponderEndPoint, null, 0, resultData.TcpClient, resultData.TcpStream, token);
 						if (resultData != null)
 						{
 							TMessage tcpResult;
@@ -546,22 +550,21 @@ namespace ARSoft.Tools.Net.Dns
 				if (endpointInfo.IsMulticast)
 				{
 					using (UdpClient udpClient = new UdpClient(new IPEndPoint(endpointInfo.LocalAddress, 0)))
-					{
-						IPEndPoint serverEndpoint = new IPEndPoint(endpointInfo.ServerAddress, _port);
-						await udpClient.SendAsync(messageData, messageLength, serverEndpoint);
+					{						
+						await udpClient.SendAsync(messageData, messageLength, endpointInfo.ServerEndPoint);
 
 						udpClient.Client.SendTimeout = QueryTimeout;
 						udpClient.Client.ReceiveTimeout = QueryTimeout;
 
 						UdpReceiveResult response = await udpClient.ReceiveAsync(QueryTimeout, token);
-						return new QueryResponse(response.Buffer, response.RemoteEndPoint.Address);
+						return new QueryResponse(response.Buffer, response.RemoteEndPoint);
 					}
 				}
 				else
 				{
 					using (UdpClient udpClient = new UdpClient(endpointInfo.LocalAddress.AddressFamily))
 					{
-						udpClient.Connect(endpointInfo.ServerAddress, _port);
+						udpClient.Connect(endpointInfo.ServerEndPoint);
 
 						udpClient.Client.SendTimeout = QueryTimeout;
 						udpClient.Client.ReceiveTimeout = QueryTimeout;
@@ -569,7 +572,7 @@ namespace ARSoft.Tools.Net.Dns
 						await udpClient.SendAsync(messageData, messageLength);
 
 						UdpReceiveResult response = await udpClient.ReceiveAsync(QueryTimeout, token);
-						return new QueryResponse(response.Buffer, response.RemoteEndPoint.Address);
+						return new QueryResponse(response.Buffer, response.RemoteEndPoint);
 					}
 				}
 			}
@@ -583,27 +586,27 @@ namespace ARSoft.Tools.Net.Dns
 		private class QueryResponse
 		{
 			public byte[] Buffer { get; }
-			public IPAddress ResponderAddress { get; }
+			public IPEndPoint ResponderEndPoint { get; }
 
 			public TcpClient TcpClient { get; }
 			public NetworkStream TcpStream { get; }
 
-			public QueryResponse(byte[] buffer, IPAddress responderAddress)
+			public QueryResponse(byte[] buffer, IPEndPoint responderEndPoint)
 			{
 				Buffer = buffer;
-				ResponderAddress = responderAddress;
+				ResponderEndPoint = responderEndPoint;
 			}
 
-			public QueryResponse(byte[] buffer, IPAddress responderAddress, TcpClient tcpClient, NetworkStream tcpStream)
+			public QueryResponse(byte[] buffer, IPEndPoint responderEndPoint, TcpClient tcpClient, NetworkStream tcpStream)
 			{
 				Buffer = buffer;
-				ResponderAddress = responderAddress;
+				ResponderEndPoint = responderEndPoint;
 				TcpClient = tcpClient;
 				TcpStream = tcpStream;
 			}
 		}
 
-		private async Task<QueryResponse> QueryByTcpAsync(IPAddress nameServer, byte[] messageData, int messageLength, TcpClient tcpClient, NetworkStream tcpStream, CancellationToken token)
+		private async Task<QueryResponse> QueryByTcpAsync(IPEndPoint nameServerEndPoint, byte[] messageData, int messageLength, TcpClient tcpClient, NetworkStream tcpStream, CancellationToken token)
 		{
 			if (!IsTcpEnabled)
 				return null;
@@ -612,13 +615,13 @@ namespace ARSoft.Tools.Net.Dns
 			{
 				if (tcpClient == null)
 				{
-					tcpClient = new TcpClient(nameServer.AddressFamily)
+					tcpClient = new TcpClient(nameServerEndPoint.AddressFamily)
 					{
 						ReceiveTimeout = QueryTimeout,
 						SendTimeout = QueryTimeout
 					};
 
-					if (!await tcpClient.TryConnectAsync(nameServer, _port, QueryTimeout, token))
+					if (!await tcpClient.TryConnectAsync(nameServerEndPoint.Address, nameServerEndPoint.Port, QueryTimeout, token))
 					{
 						return null;
 					}
@@ -645,7 +648,7 @@ namespace ARSoft.Tools.Net.Dns
 
 				byte[] resultData = new byte[length];
 
-				return await TryReadAsync(tcpClient, tcpStream, resultData, length, token) ? new QueryResponse(resultData, nameServer, tcpClient, tcpStream) : null;
+				return await TryReadAsync(tcpClient, tcpStream, resultData, length, token) ? new QueryResponse(resultData, nameServerEndPoint, tcpClient, tcpStream) : null;
 			}
 			catch (Exception e)
 			{
@@ -702,9 +705,8 @@ namespace ARSoft.Tools.Net.Dns
 			where TMessage : DnsMessageBase, new()
 		{
 			using (UdpClient udpClient = new UdpClient(new IPEndPoint(endpointInfo.LocalAddress, 0)))
-			{
-				IPEndPoint serverEndpoint = new IPEndPoint(endpointInfo.ServerAddress, _port);
-				await udpClient.SendAsync(messageData, messageLength, serverEndpoint);
+			{				
+				await udpClient.SendAsync(messageData, messageLength, endpointInfo.ServerEndPoint);
 
 				udpClient.Client.SendTimeout = QueryTimeout;
 				udpClient.Client.ReceiveTimeout = QueryTimeout;
@@ -753,7 +755,7 @@ namespace ARSoft.Tools.Net.Dns
 					.SelectMany(
 						s =>
 						{
-							if (s.IsMulticast())
+							if (s.Address.IsMulticast())
 							{
 								return localIPs
 									.Where(l => l.AddressFamily == s.AddressFamily)
@@ -761,7 +763,7 @@ namespace ARSoft.Tools.Net.Dns
 										l => new DnsClientEndpointInfo
 										{
 											IsMulticast = true,
-											ServerAddress = s,
+											ServerEndPoint = s,
 											LocalAddress = l
 										});
 							}
@@ -772,7 +774,7 @@ namespace ARSoft.Tools.Net.Dns
 									new DnsClientEndpointInfo
 									{
 										IsMulticast = false,
-										ServerAddress = s,
+										ServerEndPoint = s,
 										LocalAddress = s.AddressFamily == AddressFamily.InterNetwork ? IPAddress.Any : IPAddress.IPv6Any
 									}
 								};
@@ -787,7 +789,7 @@ namespace ARSoft.Tools.Net.Dns
 						s => new DnsClientEndpointInfo
 						{
 							IsMulticast = false,
-							ServerAddress = s,
+							ServerEndPoint = s,
 							LocalAddress = s.AddressFamily == AddressFamily.InterNetwork ? IPAddress.Any : IPAddress.IPv6Any
 						}
 					).ToList();
