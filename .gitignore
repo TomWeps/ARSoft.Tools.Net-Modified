@@ -4,3 +4,11 @@
 
 /.vs/ARSoft.Tools.Net/v14/.suo
 /ARSoft.Tools.Net/obj/Debug
+/ARSoft.Tools.Net.Test.Consul/bin/Debug
+/ARSoft.Tools.Net.Test.Consul/obj/Debug
+/ARSoft.Tools.Net.Test.Consul/Resources/consul-data
+/bin/Debug
+/TestResults
+/packages/BouncyCastle.1.8.1
+/ARSoft.Tools.Net.Test.Consul/ARSoft.Tools.Net.Test.Consul.csproj.user
+/.vs/config
