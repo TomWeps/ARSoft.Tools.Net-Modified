@@ -1,0 +1,40 @@
+{
+	"server": true,
+	"bootstrap_expect": 1,
+	"datacenter": "dc1",
+	"node_name": "test",
+	"log_level": "INFO",
+	"ports": {
+		"dns": 8600
+	},
+  "services": [
+    {
+      "id": "ServiceA-3a196397-c1bc-4b37-b245-f04a85bb9908",
+      "name": "ServiceA",
+      "tags": [ "v1" ],
+      "address": "192.168.0.1",
+      "port": 1231
+    },
+    {
+      "id": "ServiceA-8148d484-bcf0-4952-a34e-f002fe97dc0a",
+      "name": "ServiceA",
+      "tags": [ "v1" ],
+      "address": "192.168.0.2",
+      "port": 1232
+    },
+    {
+      "id": "ServiceB-0cb7b82b-b49b-4a74-af99-fb644fbb8308",
+      "name": "ServiceA",
+      "tags": [ "v2" ],
+      "address": "192.168.0.3",
+      "port": 1233
+    },
+    {
+      "id": "ServiceB-0cb7b82b-b49b-4a74-af99-f3564fbb8308",
+      "name": "ServiceB",
+      "tags": [ "v1" ],
+      "address": "192.168.0.4",
+      "port": 1234
+    }
+  ]
+}

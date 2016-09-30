@@ -1,0 +1,1 @@
+dig @127.0.0.1 -p 8600 v1.servicea.service.consul SRV

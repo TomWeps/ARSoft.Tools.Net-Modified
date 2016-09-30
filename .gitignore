@@ -1,0 +1,6 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs/ARSoft.Tools.Net/v14/.suo
+/ARSoft.Tools.Net/obj/Debug
