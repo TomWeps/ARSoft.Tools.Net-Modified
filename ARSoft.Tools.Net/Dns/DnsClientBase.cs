@@ -303,7 +303,7 @@ namespace ARSoft.Tools.Net.Dns
 
 					PrepareAndBindUdpSocket(endpointInfo, udpClient);
 
-				    EndPoint serverEndpoint = endpointInfo.ServerEndPoint;
+				    EndPoint serverEndpoint = new IPEndPoint(endpointInfo.ServerEndPoint.Address, endpointInfo.ServerEndPoint.Port); 
 
 					udpClient.SendTo(messageData, messageLength, SocketFlags.None, serverEndpoint);
 
